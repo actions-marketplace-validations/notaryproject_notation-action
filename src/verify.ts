@@ -17,13 +17,19 @@ import * as core from '@actions/core';
 import * as exec from '@actions/exec';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as semver from 'semver';
 import {getConfigHome} from './lib/install';
+import { notationCLIVersion } from './setup';
 
 const X509 = "x509";
 
 // verify verifies the target artifact with Notation
 async function verify(): Promise<void> {
     try {
+        // notation CLI version
+        const notationVersion = await notationCLIVersion();
+        console.log("Notation CLI version is ", notationVersion);
+
         // inputs from user
         const target_artifact_ref = core.getInput('target_artifact_reference');
         const trust_policy = core.getInput('trust_policy'); // .github/trustpolicy/trustpolicy.json
@@ -41,6 +47,18 @@ async function verify(): Promise<void> {
             throw new Error("input trust_store is required");
         }
 
+        // get list of target artifact references
+        const targetArtifactReferenceList: string[] = [];
+        for (let ref of target_artifact_ref.split(/\r?\n/)) {
+            ref = ref.trim();
+            if (ref) {
+                targetArtifactReferenceList.push(ref); 
+            }
+        }
+        if (targetArtifactReferenceList.length === 0) {
+            throw new Error("input target_artifact_reference does not contain any valid reference")
+        }
+
         // configure Notation trust policy
         await exec.getExecOutput('notation', ['policy', 'import', '--force', trust_policy]);
         await exec.getExecOutput('notation', ['policy', 'show']);
@@ -50,12 +68,17 @@ async function verify(): Promise<void> {
         await exec.getExecOutput('notation', ['cert', 'ls']);
 
         // verify core process
-        if (allow_referrers_api.toLowerCase() === 'true') {
+        let notationCommand: string[] = ['verify', '-v'];
+        if (allow_referrers_api.toLowerCase() === 'true' && semver.lt(notationVersion, '1.2.0')) {
             // if process.env.NOTATION_EXPERIMENTAL is not set, notation would
             // fail the command as expected.
-            await exec.getExecOutput('notation', ['verify', '--allow-referrers-api', target_artifact_ref, '-v']);
-        } else {
-            await exec.getExecOutput('notation', ['verify', target_artifact_ref, '-v']);
+            //
+            // Deprecated for Notation v1.2.0 or later.
+            console.log("'allow_referrers_api' set to true, try referrers api first");
+            notationCommand.push('--allow-referrers-api');
+        }
+        for (const ref of targetArtifactReferenceList) {
+            await exec.getExecOutput('notation', [...notationCommand, ref]);
         }
     } catch (e: unknown) {
         if (e instanceof Error) {
@@ -77,7 +100,7 @@ async function configTrustStore(dir: string) {
     if (fs.existsSync(trustStorePath)) {
         fs.rmSync(trustStorePath, {recursive: true});
     }
-    let trustStoreTypes = getSubdir(trustStoreX509); // [.github/truststore/x509/ca, .github/truststore/x509/signingAuthority, ...]
+    let trustStoreTypes = getSubdir(trustStoreX509); // [.github/truststore/x509/ca, .github/truststore/x509/signingAuthority, .github/truststore/x509/tsa]
     for (let i = 0; i < trustStoreTypes.length; ++i) {
         let trustStoreType = path.basename(trustStoreTypes[i]);
         let trustStores = getSubdir(trustStoreTypes[i]); // [.github/truststore/x509/ca/<my_store1>, .github/truststore/x509/ca/<my_store2>, ...]

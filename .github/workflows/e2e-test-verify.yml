@@ -31,17 +31,25 @@ jobs:
           - 5000:5000
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Build and push to local registry
-        id: prepare
-        uses: docker/build-push-action@v4
+        id: image1
+        uses: docker/build-push-action@v6
         with:
           context: ./tests/e2e
           push: true
-          tags: localhost:5000/e2e:latest
+          tags: localhost:5000/image1:latest
+      - name: Build and push to local registry
+        id: image2
+        uses: docker/build-push-action@v6
+        with:
+          context: ./tests/e2e
+          push: true
+          tags: localhost:5000/image2:latest
       - name: Retrieve digest
         run: |
-          echo "target_artifact_reference=localhost:5000/e2e@${{ steps.prepare.outputs.digest }}" >> "$GITHUB_ENV"
+          echo "target_artifact_reference=localhost:5000/image1@${{ steps.image1.outputs.digest }}" >> "$GITHUB_ENV"
+          echo "target_artifact_reference2=localhost:5000/image2@${{ steps.image2.outputs.digest }}" >> "$GITHUB_ENV"
       
       # Setting up Notation CLI on the runner
       - name: Setup Notation
@@ -52,44 +60,86 @@ jobs:
         run: |
           notation cert generate-test "e2e-test"
           notation cert delete --type ca --store e2e-test -y --all
-          mkdir -p ${GITHUB_WORKSPACE}/tests/e2e/truststore/x509/ca/e2e-test
-          cp ${{ env.E2E_CERT }} ${GITHUB_WORKSPACE}/tests/e2e/truststore/x509/ca/e2e-test/e2e-test.crt
+          mkdir -p ${GITHUB_WORKSPACE}/tests/e2e/verify/truststore/x509/ca/e2e-test
+          cp ${{ env.E2E_CERT }} ${GITHUB_WORKSPACE}/tests/e2e/verify/truststore/x509/ca/e2e-test/e2e-test.crt
           
       # Sign artifact
-      - name: Sign artifact using notation plugin
+      - name: Sign multiple artifacts using notation plugin
         uses: ./sign
         with:
           plugin_name: e2e-test-plugin
           plugin_url: https://github.com/notaryproject/notation-action/raw/e2e-test-plugin/tests/plugin_binaries/notation-e2e-test-plugin_0.1.0_linux_amd64.tar.gz
           plugin_checksum: be8d035024d3a96afb4118af32f2e201f126c7254b02f7bcffb3e3149d744fd2
           key_id: ${{ env.E2E_CERT }}
-          target_artifact_reference: ${{ env.target_artifact_reference }}
+          target_artifact_reference: |-
+            ${{ env.target_artifact_reference }}
+            ${{ env.target_artifact_reference2 }}
           signature_format: cose
           plugin_config: |-
             keyFile=${{ env.E2E_KEY }}
+          timestamp_url: http://timestamp.digicert.com
+          timestamp_root_cert: ./tests/e2e/sign/tsaRootCert/DigiCertTSARootSHA384.cer
+          force_referrers_tag: 'false'
     
       # E2E test cases on Notation Verify
       - name: Verify released artifact
         uses: ./verify
         with:
             target_artifact_reference: ${{ env.target_artifact_reference }}
-            trust_policy: ./tests/e2e/trustpolicy/trustpolicy.json
-            trust_store: ./tests/e2e/truststore
+            trust_policy: ./tests/e2e/verify/trustpolicy/trustpolicy.json
+            trust_store: ./tests/e2e/verify/truststore
 
       - name: Verify released artifact again with the same notation configuration
         uses: ./verify
         with:
             target_artifact_reference: ${{ env.target_artifact_reference }}
-            trust_policy: ./tests/e2e/trustpolicy/trustpolicy.json
-            trust_store: ./tests/e2e/truststore
+            trust_policy: ./tests/e2e/verify/trustpolicy/trustpolicy.json
+            trust_store: ./tests/e2e/verify/truststore
+      
+      - name: Verify released artifact with timestamp verification enabled
+        uses: ./verify
+        with:
+            target_artifact_reference: ${{ env.target_artifact_reference }}
+            trust_policy: ./tests/e2e/verify/trustpolicy/timestampVerificationEnabled.json
+            trust_store: ./tests/e2e/verify/truststore
+      
+      - name: Verify multiple released artifacts
+        uses: ./verify
+        with:
+            target_artifact_reference: |-
+              ${{ env.target_artifact_reference }}
+              ${{ env.target_artifact_reference2 }}
+            trust_policy: ./tests/e2e/verify/trustpolicy/trustpolicy.json
+            trust_store: ./tests/e2e/verify/truststore
+
+      - name: Verify with allow_referrers_api set to true
+        uses: ./verify
+        env:
+          NOTATION_EXPERIMENTAL: 1
+        with:
+            target_artifact_reference: |-
+              ${{ env.target_artifact_reference }}
+              ${{ env.target_artifact_reference2 }}
+            trust_policy: ./tests/e2e/verify/trustpolicy/trustpolicy.json
+            trust_store: ./tests/e2e/verify/truststore
+            allow_referrers_api: 'true'
+      
+      - name: Verify multiple released artifacts with timestamp verification enabled
+        uses: ./verify
+        with:
+            target_artifact_reference: |-
+              ${{ env.target_artifact_reference }}
+              ${{ env.target_artifact_reference2 }}
+            trust_policy: ./tests/e2e/verify/trustpolicy/timestampVerificationEnabled.json
+            trust_store: ./tests/e2e/verify/truststore
       
       - name: Verify released artifact missing target artifact reference
         continue-on-error: true
         id: missing-artifact-reference
         uses: ./verify
         with:
-            trust_policy: ./tests/e2e/trustpolicy/trustpolicy.json
-            trust_store: ./tests/e2e/truststore
+            trust_policy: ./tests/e2e/verify/trustpolicy/trustpolicy.json
+            trust_store: ./tests/e2e/verify/truststore
       - name: 'Should Fail: Verify released artifact missing target artifact reference'
         if: steps.missing-artifact-reference.outcome != 'failure'
         run: |
@@ -102,7 +152,7 @@ jobs:
         uses: ./verify
         with:
             target_artifact_reference: ${{ env.target_artifact_reference }}
-            trust_store: ./tests/e2e/truststore
+            trust_store: ./tests/e2e/verify/truststore
       - name: 'Should Fail: Verify released artifact missing trust policy'
         if: steps.missing-trust-policy.outcome != 'failure'
         run: |
@@ -115,8 +165,8 @@ jobs:
         uses: ./verify
         with:
             target_artifact_reference: ${{ env.target_artifact_reference }}
-            trust_policy: ./tests/e2e/trustpolicy/invalid-trustpolicy.json
-            trust_store: ./tests/e2e/truststore
+            trust_policy: ./tests/e2e/verify/trustpolicy/invalid-trustpolicy.json
+            trust_store: ./tests/e2e/verify/truststore
       - name: 'Should Fail: Verify released artifact with invalid trust policy'
         if: steps.invalid-trust-policy.outcome != 'failure'
         run: |
@@ -129,7 +179,7 @@ jobs:
         uses: ./verify
         with:
             target_artifact_reference: ${{ env.target_artifact_reference }}
-            trust_policy: ./tests/e2e/trustpolicy/trustpolicy.json
+            trust_policy: ./tests/e2e/verify/trustpolicy/trustpolicy.json
       - name: 'Should Fail: Verify released artifact missing trust store'
         if: steps.missing-trust-store.outcome != 'failure'
         run: |
@@ -142,8 +192,8 @@ jobs:
         uses: ./verify
         with:
             target_artifact_reference: ${{ env.target_artifact_reference }}
-            trust_policy: ./tests/e2e/trustpolicy/trustpolicy.json
-            trust_store: ./tests/e2e/invalid-trust-store/x509
+            trust_policy: ./tests/e2e/verify/trustpolicy/trustpolicy.json
+            trust_store: ./tests/e2e/verify/invalid-trust-store/x509
       - name: 'Should Fail: Verify released artifact with invalid trust store structure'
         if: steps.invalid-trust-store.outcome != 'failure'
         run: |
@@ -156,8 +206,8 @@ jobs:
         uses: ./verify
         with:
             target_artifact_reference: ${{ env.target_artifact_reference }}
-            trust_policy: ./tests/e2e/trustpolicy/trustpolicy.json
-            trust_store: ./tests/e2e/truststore/invalid-trust-store
+            trust_policy: ./tests/e2e/verify/trustpolicy/trustpolicy.json
+            trust_store: ./tests/e2e/verify/truststore/invalid-trust-store
       - name: 'Should Fail: Verify released artifact without valid cert in trust store'
         if: steps.invalid-cert.outcome != 'failure'
         run: |

@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # E2E test cases on Notation Setup
       - name: Setup Notation
@@ -43,15 +43,15 @@ jobs:
       - name: Setup Notation using URL
         uses: ./setup
         with:
-            url: https://github.com/notaryproject/notation/releases/download/v1.0.0/notation_1.0.0_linux_amd64.tar.gz
-            checksum: eceec8cb6d5cbaeb8f6f22399eb89317fe005a85206a5e780fdde1ef5bb64596
+            url: https://github.com/notaryproject/notation/releases/download/v1.3.2/notation_1.3.2_linux_amd64.tar.gz
+            checksum: e1a0f060308086bf8020b2d31defb7c5348f133ca0dba6a1a7820ef3cbb6dfe5
 
       - name: Setup Notation using URL without checksum
         id: no-checksum
         continue-on-error: true
         uses: ./setup
         with:
-          url: https://github.com/notaryproject/notation/releases/download/v1.0.0/notation_1.0.0_linux_amd64.tar.gz
+          url: https://github.com/notaryproject/notation/releases/download/v1.3.2/notation_1.3.2_linux_amd64.tar.gz
       - name: 'Should Fail: Setup Notation using URL without checksum'
         if: steps.no-checksum.outcome != 'failure'
         run: |
@@ -63,7 +63,7 @@ jobs:
         continue-on-error: true
         uses: ./setup
         with:
-          url: https://github.com/notaryproject/notation/releases/download/v1.0.0/notation_1.0.0_linux_amd64.tar.gz
+          url: https://github.com/notaryproject/notation/releases/download/v1.3.2/notation_1.3.2_linux_amd64.tar.gz
           checksum: abcedf
       - name: 'Should Fail: Setup Notation using URL and invalid checksum'
         if: steps.invalid-checksum.outcome != 'failure'

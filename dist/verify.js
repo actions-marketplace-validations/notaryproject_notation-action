@@ -29,13 +29,23 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
@@ -49,12 +59,17 @@ const core = __importStar(require("@actions/core"));
 const exec = __importStar(require("@actions/exec"));
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const semver = __importStar(require("semver"));
 const install_1 = require("./lib/install");
+const setup_1 = require("./setup");
 const X509 = "x509";
 // verify verifies the target artifact with Notation
 function verify() {
     return __awaiter(this, void 0, void 0, function* () {
         try {
+            // notation CLI version
+            const notationVersion = yield (0, setup_1.notationCLIVersion)();
+            console.log("Notation CLI version is ", notationVersion);
             // inputs from user
             const target_artifact_ref = core.getInput('target_artifact_reference');
             const trust_policy = core.getInput('trust_policy'); // .github/trustpolicy/trustpolicy.json
@@ -70,6 +85,17 @@ function verify() {
             if (!trust_store) {
                 throw new Error("input trust_store is required");
             }
+            // get list of target artifact references
+            const targetArtifactReferenceList = [];
+            for (let ref of target_artifact_ref.split(/\r?\n/)) {
+                ref = ref.trim();
+                if (ref) {
+                    targetArtifactReferenceList.push(ref);
+                }
+            }
+            if (targetArtifactReferenceList.length === 0) {
+                throw new Error("input target_artifact_reference does not contain any valid reference");
+            }
             // configure Notation trust policy
             yield exec.getExecOutput('notation', ['policy', 'import', '--force', trust_policy]);
             yield exec.getExecOutput('notation', ['policy', 'show']);
@@ -77,13 +103,17 @@ function verify() {
             yield configTrustStore(trust_store);
             yield exec.getExecOutput('notation', ['cert', 'ls']);
             // verify core process
-            if (allow_referrers_api.toLowerCase() === 'true') {
+            let notationCommand = ['verify', '-v'];
+            if (allow_referrers_api.toLowerCase() === 'true' && semver.lt(notationVersion, '1.2.0')) {
                 // if process.env.NOTATION_EXPERIMENTAL is not set, notation would
                 // fail the command as expected.
-                yield exec.getExecOutput('notation', ['verify', '--allow-referrers-api', target_artifact_ref, '-v']);
+                //
+                // Deprecated for Notation v1.2.0 or later.
+                console.log("'allow_referrers_api' set to true, try referrers api first");
+                notationCommand.push('--allow-referrers-api');
             }
-            else {
-                yield exec.getExecOutput('notation', ['verify', target_artifact_ref, '-v']);
+            for (const ref of targetArtifactReferenceList) {
+                yield exec.getExecOutput('notation', [...notationCommand, ref]);
             }
         }
         catch (e) {
@@ -108,7 +138,7 @@ function configTrustStore(dir) {
         if (fs.existsSync(trustStorePath)) {
             fs.rmSync(trustStorePath, { recursive: true });
         }
-        let trustStoreTypes = getSubdir(trustStoreX509); // [.github/truststore/x509/ca, .github/truststore/x509/signingAuthority, ...]
+        let trustStoreTypes = getSubdir(trustStoreX509); // [.github/truststore/x509/ca, .github/truststore/x509/signingAuthority, .github/truststore/x509/tsa]
         for (let i = 0; i < trustStoreTypes.length; ++i) {
             let trustStoreType = path.basename(trustStoreTypes[i]);
             let trustStores = getSubdir(trustStoreTypes[i]); // [.github/truststore/x509/ca/<my_store1>, .github/truststore/x509/ca/<my_store2>, ...]

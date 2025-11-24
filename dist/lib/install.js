@@ -29,18 +29,33 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getBinaryExtension = exports.getArch = exports.getPlatform = exports.getConfigHome = exports.getNotationDownload = exports.getNotationDownloadURL = void 0;
+exports.getNotationDownloadURL = getNotationDownloadURL;
+exports.getNotationDownload = getNotationDownload;
+exports.getConfigHome = getConfigHome;
+exports.getPlatform = getPlatform;
+exports.getArch = getArch;
+exports.getBinaryExtension = getBinaryExtension;
 const os = __importStar(require("os"));
 const path = __importStar(require("path"));
 const notation_releases_json_1 = __importDefault(require("./data/notation_releases.json"));
@@ -52,7 +67,6 @@ function getNotationDownloadURL(version, url) {
     const download = getNotationDownload(version);
     return download["url"];
 }
-exports.getNotationDownloadURL = getNotationDownloadURL;
 // getNotationDownload returns the download object containing url and checksum
 // of official Notation CLI release given version
 function getNotationDownload(version) {
@@ -68,7 +82,6 @@ function getNotationDownload(version) {
     }
     return download;
 }
-exports.getNotationDownload = getNotationDownload;
 // getConfigHome gets Notation config home dir based on platform
 // reference: https://notaryproject.dev/docs/concepts/directory-structure/#user-level
 function getConfigHome() {
@@ -87,7 +100,6 @@ function getConfigHome() {
             throw new Error(`unknown platform: ${platform}`);
     }
 }
-exports.getConfigHome = getConfigHome;
 // getPlatform returns os.platform(), filtered by Notation requirements.
 function getPlatform() {
     const platform = os.platform();
@@ -102,7 +114,6 @@ function getPlatform() {
             throw new Error(`unsupported platform: ${platform}`);
     }
 }
-exports.getPlatform = getPlatform;
 // getArch returns os.arch(), filtered by Notation requirements.
 function getArch() {
     const architecture = os.arch();
@@ -115,10 +126,8 @@ function getArch() {
             throw new Error(`unsupported architecture: ${architecture}`);
     }
 }
-exports.getArch = getArch;
 function getBinaryExtension() {
     const platform = getPlatform();
     return platform === 'windows' ? '.exe' : '';
 }
-exports.getBinaryExtension = getBinaryExtension;
 //# sourceMappingURL=install.js.map
